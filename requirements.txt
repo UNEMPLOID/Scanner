@@ -1,0 +1,6 @@
+python-whois
+requests
+dnspython
+builtwith
+shodan
+python-telegram-bot
