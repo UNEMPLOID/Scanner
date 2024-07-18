@@ -79,8 +79,7 @@ def remove_premium(update: Update, context: CallbackContext) -> None:
     if update.message.from_user.id != OWNER_ID:
         update.message.reply_text("You are not authorized to use this command.")
         return
-    
-    args = context.args
+            args = context.args
     if len(args) != 1:
         update.message.reply_text("Usage: /remove <user_id>")
         return
@@ -104,12 +103,14 @@ def ban_user(update: Update, context: CallbackContext) -> None:
         return
     
     user_id = int(args[0])
-    if user_id not in users:
-        users[user_id] = {"searches": 0, "banned": True}
-    else:
+    if user_id in users:
         users[user_id]["banned"] = True
-    save_user_data()
-    update.message.reply_text(f"Banned user {user_id}.")
+        save_user_data()
+        update.message.reply_text(f"Banned user {user_id}.")
+    else:
+        users[user_id] = {"searches": 0, "banned": True}
+        save_user_data()
+        update.message.reply_text(f"Banned user {user_id}.")
 
 def broadcast(update: Update, context: CallbackContext) -> None:
     if update.message.from_user.id != OWNER_ID:
@@ -117,103 +118,110 @@ def broadcast(update: Update, context: CallbackContext) -> None:
         return
     
     message = ' '.join(context.args)
-    for user_id in users.keys():
-        context.bot.send_message(chat_id=user_id, text=message)
+    if not message:
+        update.message.reply_text("Usage: /broadcast <message>")
+        return
+    
+    for user_id in users:
+        try:
+            context.bot.send_message(chat_id=user_id, text=message)
+        except Exception as e:
+            print(f"Failed to send message to {user_id}: {e}")
+    
     update.message.reply_text("Broadcast message sent.")
 
 def stats(update: Update, context: CallbackContext) -> None:
     if update.message.from_user.id != OWNER_ID:
         update.message.reply_text("You are not authorized to use this command.")
         return
-
+    
     total_users = len(users)
-    premium_users = len([u for u in users.values() if u.get("searches", 0) > 0])
-    banned_users = len([u for u in users.values() if u.get("banned", False)])
-
-    groups = [REQUIRED_GROUP] + REQUIRED_CHANNELS
-
-    stats_message = (
-        f"Total users: {total_users}\n"
-        f"Premium users: {premium_users}\n"
-        f"Banned users: {banned_users}\n"
-        f"Groups/Channels: {', '.join(groups)}"
-    )
+    premium_users = sum(1 for u in users.values() if u["searches"] > 0)
+    banned_users = sum(1 for u in users.values() if u["banned"])
+    
+    stats_message = (f"Total users: {total_users}\n"
+                     f"Premium users: {premium_users}\n"
+                     f"Banned users: {banned_users}")
+    
     update.message.reply_text(stats_message)
 
 def start(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
-    if not check_subscription(user_id, context.bot):
-        update.message.reply_text("Please join all the required channels/groups to use the bot.")
+    if user_id in users and users[user_id]["banned"]:
+        update.message.reply_text("You are banned from using this bot.")
         return
-
+    
+    if not check_subscription(user_id, context.bot):
+        update.message.reply_text("Please join all required channels and groups before using the bot.")
+        return
+    
+    users[user_id] = {"searches": 0, "banned": False}
+    save_user_data()
+    
     keyboard = [[InlineKeyboardButton("Start Scan", callback_data='start_scan')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Welcome to the Bot! Click the button below to start scanning.", reply_markup=reply_markup)
+    update.message.reply_text("Welcome! Click the button below to start a scan.", reply_markup=reply_markup)
 
 def start_scan(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    query.answer()
-
-    user_id = query.from_user.id
-    if not check_subscription(user_id, context.bot):
-        query.edit_message_text("Please join all the required channels/groups to use the bot.")
+    user_id = update.callback_query.from_user.id
+    if user_id in users and users[user_id]["banned"]:
+        update.callback_query.message.reply_text("You are banned from using this bot.")
         return
-
+    
+    if not check_subscription(user_id, context.bot):
+        update.callback_query.message.reply_text("Please join all required channels and groups before using the bot.")
+        return
+    
     context.user_data['scanning'] = True
-    keyboard = [[InlineKeyboardButton("Cancel", callback_data='cancel_scan')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    query.edit_message_text("Please enter the URL you want to scan.", reply_markup=reply_markup)
+    update.callback_query.message.reply_text("Please enter the URL you want to scan.")
+    context.bot.send_message(chat_id=update.callback_query.message.chat_id, text="Please enter the URL you want to scan.")
 
 def scan_url(update: Update, context: CallbackContext) -> None:
-    if 'scanning' not in context.user_data or not context.user_data['scanning']:
-        return
-
     user_id = update.message.from_user.id
-    url = update.message.text
-    context.user_data['url'] = url
+    if user_id in users and users[user_id]["banned"]:
+        update.message.reply_text("You are banned from using this bot.")
+        return
+    
+    if 'scanning' not in context.user_data:
+        update.message.reply_text("Please start a scan first by clicking the button in the /start command.")
+        return
+    
+    context.user_data.pop('scanning', None)
+    
+    url = update.message.text.split(' ', 1)[1]
+    domain = url.replace('http://', '').replace('https://', '').split('/')[0]
+    
+    # Start scanning the URL
+    result = {
+        "WHOIS Info": get_whois_info(domain),
+        "IP Geolocation": get_ip_geolocation(domain),
+        "Real IP Address": get_real_ip(domain),
+        "SSL Certificate": get_ssl_info(domain),
+        "DNS Records": get_dns_records(domain),
+        "HTTP Headers": get_http_headers(domain),
+        "Web Technologies": get_web_technologies(domain),
+        "Subdomains": find_subdomains(domain)
+    }
+    
+    message = "\n\n".join([f"{key}:\n{value}" for key, value in result.items()])
+    update.message.reply_text(message + f"\n\nJoin us - {REQUIRED_GROUP}")
 
-    update.message.reply_text("Scanning process started. Please wait for the results.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Scanning...", callback_data='scanning')]]))
-    threading.Thread(target=perform_scan, args=(update.message, user_id, context.bot)).start()
-
-def perform_scan(message, user_id, bot):
-    try:
-        url = message.text.split()[-1]
-
-        domain = url.split()[-1]
-
-        information = [
-            ("WHOIS Info", get_whois_info(domain)),
-            ("IP Geolocation", get_ip_geolocation(domain)),
-            ("Real IP Address", get_real_ip(domain)),
-            ("SSL Certificate", get_ssl_info(domain)),
-            ("DNS Records", get_dns_records(domain)),
-            ("HTTP Headers", get_http_headers(domain)),
-            ("Web Technologies", get_web_technologies(domain)),
-            ("Subdomains", find_subdomains(domain)),
-        ]
-        response_text = "\n\n".join([f"{title}:\n{info}" for title, info in information])
-        message.reply_text(response_text + f"\n\nJoin us - {REQUIRED_GROUP}")
-    except Exception as e:
-        message.reply_text(f"Error during scan: {e}")
-
-# WHOIS Info
+# Utility functions for scanning
 def get_whois_info(domain):
     try:
-        w = whois.whois(domain)
-        return json.dumps(w, indent=2)
+        whois_info = whois.whois(domain)
+        return json.dumps(whois_info, indent=2, default=str)
     except Exception as e:
         return f"Error fetching WHOIS info: {e}"
 
-# IP Geolocation
 def get_ip_geolocation(domain):
     try:
         ip = socket.gethostbyname(domain)
-        response = requests.get(f"http://ip-api.com/json/{ip}")
+        response = requests.get(f"https://api.shodan.io/shodan/host/{ip}?key={SHODAN_API_KEY}")
         return json.dumps(response.json(), indent=2)
     except Exception as e:
         return f"Error fetching IP geolocation: {e}"
 
-# Real IP Address
 def get_real_ip(domain):
     try:
         ip = socket.gethostbyname(domain)
@@ -221,7 +229,6 @@ def get_real_ip(domain):
     except Exception as e:
         return f"Error fetching real IP: {e}"
 
-# SSL Certificate
 def get_ssl_info(domain):
     try:
         cert = ssl.get_server_certificate((domain, 443))
@@ -230,7 +237,6 @@ def get_ssl_info(domain):
     except Exception as e:
         return f"Error fetching SSL info: {e}"
 
-# DNS Records
 def get_dns_records(domain):
     try:
         answers = dns.resolver.resolve(domain, 'ANY')
@@ -238,7 +244,6 @@ def get_dns_records(domain):
     except Exception as e:
         return f"Error fetching DNS records: {e}"
 
-# HTTP Headers
 def get_http_headers(domain):
     try:
         response = requests.get(f"http://{domain}")
@@ -246,7 +251,6 @@ def get_http_headers(domain):
     except Exception as e:
         return f"Error fetching HTTP headers: {e}"
 
-# Web Technologies
 def get_web_technologies(domain):
     try:
         tech = builtwith.parse(f"http://{domain}")
@@ -254,7 +258,6 @@ def get_web_technologies(domain):
     except Exception as e:
         return f"Error fetching web technologies: {e}"
 
-# Subdomains
 def find_subdomains(domain):
     try:
         result = subprocess.run(['python3', 'Sublist3r/sublist3r.py', '-d', domain, '-o', 'subdomains.txt'], capture_output=True, text=True)
@@ -303,3 +306,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+        
