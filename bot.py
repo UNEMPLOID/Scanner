@@ -15,13 +15,13 @@ from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageH
 from telegram.error import BadRequest
 
 # Replace placeholders with your actual API keys, bot token, and other details
-SHODAN_API_KEY = 'YOUR_SHODAN_API_KEY'
-TELEGRAM_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-OWNER_ID = YOUR_OWNER_ID
-OWNER_USERNAME = 'YOUR_OWNER_USERNAME'
+SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
+TELEGRAM_BOT_TOKEN = '7289883891:AAFIMGy9T9-V8iklbHc3Gl3jPE30ogMIBdY'
+OWNER_ID = 5460343986
+OWNER_USERNAME = '@moon_god_khonsu'
 
-REQUIRED_GROUP = '@your_required_group'
-REQUIRED_CHANNELS = ['@your_required_channel1', '@your_required_channel2']
+REQUIRED_GROUP = '@fakaoanl'
+REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
 
 # Initialize Shodan API
 shodan_api = shodan.Shodan(SHODAN_API_KEY)
