@@ -15,7 +15,7 @@ from telegram.error import NetworkError, Unauthorized
 
 # Replace placeholders with your actual API keys, bot token, and other details
 SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
-TELEGRAM_BOT_TOKEN = '7289883891:AAFIMGy9T9-V8iklbHc3Gl3jPE30ogMIBdY'
+TELEGRAM_BOT_TOKEN = '7289883891:AAE-zMR_5Ln0GMknhgSeYZrmUGd0UsMt5qA'
 OWNER_ID = 5460343986
 OWNER_USERNAME = '@moon_god_khonsu'
 
