@@ -15,7 +15,7 @@ from telegram.error import NetworkError, Unauthorized
 
 # Replace placeholders with your actual API keys, bot token, and other details
 SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
-TELEGRAM_BOT_TOKEN = '7289883891:AAE-zMR_5Ln0GMknhgSeYZrmUGd0UsMt5qA'
+TELEGRAM_BOT_TOKEN = '7242640738:AAFl-Rz9Ce3q_smQ41m4Y0ECuHCWMECHMnE'
 OWNER_ID = 5460343986
 OWNER_USERNAME = '@moon_god_khonsu'
 
@@ -179,7 +179,7 @@ def handle_message(update: Update, context: CallbackContext):
         context.bot_data['waiting_for_url'] = None
 
 def scan_url(url):
-    result = ["Web scanner:\nScanning... This might take a few minutes.\n"]
+    result = ["Web scanner:\n"]
 
     # WHOIS Info
     try:
@@ -330,4 +330,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
