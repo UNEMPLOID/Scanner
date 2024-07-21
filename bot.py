@@ -21,6 +21,7 @@ OWNER_USERNAME = '@moon_god_khonsu'
 
 REQUIRED_GROUP = '@fakaoanl'
 REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
+
 users = {}
 
 def load_user_data():
@@ -232,7 +233,7 @@ def get_dns_records(domain):
 def get_http_headers(domain):
     try:
         response = requests.get(f"http://{domain}")
-        return json.dumps(dict(response.headers), indent=2)
+        return "\n".join([f"{k}: {v}" for k, v in response.headers.items()])
     except Exception as e:
         return f"Error fetching HTTP headers: {e}"
 
@@ -277,4 +278,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-        
+                                            
