@@ -11,13 +11,11 @@ import shodan
 import threading
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
-from telegram.error import NetworkError
-
-# Replace placeholders with your actual API keys, bot token, and other details
+from telegram.error import NetworkError, Unauthorized
 
 # Replace placeholders with your actual API keys, bot token, and other details
 SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
-TELEGRAM_BOT_TOKEN = '7289883891:AAE-zMR_5Ln0GMknhgSeYZrmUGd0UsMt5qA'
+TELEGRAM_BOT_TOKEN = '7289883891:AAFIMGy9T9-V8iklbHc3Gl3jPE30ogMIBdY'
 OWNER_ID = 5460343986
 OWNER_USERNAME = '@moon_god_khonsu'
 
@@ -26,6 +24,18 @@ REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
 
 # Setup Shodan API
 shodan_api = shodan.Shodan(SHODAN_API_KEY)
+
+# User data
+user_data = {}
+
+# Load user data
+if os.path.exists('user_data.json'):
+    with open('user_data.json', 'r') as f:
+        user_data = json.load(f)
+
+def save_user_data():
+    with open('user_data.json', 'w') as f:
+        json.dump(user_data, f)
 
 def install_dependencies():
     # Install required tools if they are not available
@@ -40,16 +50,30 @@ def start(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     user_name = update.message.from_user.username
 
+    if user_id not in user_data:
+        user_data[user_id] = {
+            'free_searches': 5,
+            'premium_searches': 0,
+            'is_banned': False,
+            'scan_history': []
+        }
+        save_user_data()
+
+    # Check if user is banned
+    if user_data[user_id]['is_banned']:
+        update.message.reply_text("You are banned from using this bot.")
+        return
+
     # Check if user is part of required group and channels
     if not check_subscription(user_id, context.bot):
         keyboard = [
+            [InlineKeyboardButton("Join Group", url=f"https://t.me/{REQUIRED_GROUP}")],
+            *[InlineKeyboardButton(f"Join Channel {i+1}", url=f"https://t.me/{channel}") for i, channel in enumerate(REQUIRED_CHANNELS)],
             [InlineKeyboardButton("Check Joined", callback_data='check_joined')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         update.message.reply_text(
-            "Please join all required channels and groups before using the bot.\n"
-            f"Group: {REQUIRED_GROUP}\n"
-            f"Channels: {', '.join(REQUIRED_CHANNELS)}",
+            "Please join all required channels and groups before using the bot.",
             reply_markup=reply_markup
         )
         return
@@ -106,7 +130,28 @@ def button(update: Update, context: CallbackContext):
             )
 
 def handle_message(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
     chat_id = update.message.chat_id
+
+    # Check if user is banned
+    if user_data[user_id]['is_banned']:
+        update.message.reply_text("You are banned from using this bot.")
+        return
+
+    # Ensure user has joined required group and channels
+    if not check_subscription(user_id, context.bot):
+        update.message.reply_text("Please join all required channels and groups before using the bot.")
+        return
+
+    # Check if user has reached the search limit
+    if user_data[user_id]['free_searches'] <= 0 and user_data[user_id]['premium_searches'] <= 0:
+        keyboard = [
+            [InlineKeyboardButton("Contact Owner", url=f"https://t.me/{OWNER_USERNAME}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text("You have reached the search limit. Please contact the owner to buy more searches.", reply_markup=reply_markup)
+        return
+
     if chat_id in context.bot_data and context.bot_data['waiting_for_url'] == chat_id:
         url = update.message.text
 
@@ -114,16 +159,27 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text("Invalid URL. Please provide a URL starting with http:// or https://")
             return
 
+        # Decrease search count
+        if user_data[user_id]['premium_searches'] > 0:
+            user_data[user_id]['premium_searches'] -= 1
+        else:
+            user_data[user_id]['free_searches'] -= 1
+        save_user_data()
+
         # Start scanning process
         update.message.reply_text("Scanning... This might take a few minutes.")
         scan_data = scan_url(url)
-        
+
+        # Record scan history
+        user_data[user_id]['scan_history'].append(url)
+        save_user_data()
+
         # Send scan results
         update.message.reply_text(scan_data)
         context.bot_data['waiting_for_url'] = None
 
 def scan_url(url):
-    result = []
+    result = ["Web scanner:\nScanning... This might take a few minutes.\n"]
 
     # WHOIS Info
     try:
@@ -144,7 +200,7 @@ def scan_url(url):
 
     # Real IP Address
     try:
-        shodan_info = shodan_api.host(url)
+        shodan_info = shodan_api.host(ip)
         result.append("Real IP Address:")
         result.append(shodan_info['ip_str'])
     except Exception as e:
@@ -186,41 +242,92 @@ def scan_url(url):
 
     # Subdomains
     try:
+        subdomains = subprocess.check_output(['sublist3r', '-d', url])
         result.append("Subdomains:")
-        subdomains = subprocess.check_output(['sublist3r', '-d', url, '-o', 'subdomains.txt'])
-        with open('subdomains.txt', 'r') as file:
-            result.append(file.read())
+        result.append(subdomains.decode('utf-8'))
     except Exception as e:
         result.append(f"Error fetching subdomains: {e}")
 
-    result.append(f"\nJoin us - {REQUIRED_GROUP}")
-    return "\n".join(result)
+    return '\n'.join(result)
+
+def stats(update: Update, context: CallbackContext):
+    if update.message.from_user.id != OWNER_ID:
+        update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    total_users = len(user_data)
+    total_groups = len(context.bot_data.get('groups', []))
+    update.message.reply_text(f"Total users: {total_users}\nTotal groups: {total_groups}")
+
+def broadcast(update: Update, context: CallbackContext):
+    if update.message.from_user.id != OWNER_ID:
+        update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    message = ' '.join(context.args)
+    for user_id in user_data:
+        try:
+            context.bot.send_message(chat_id=user_id, text=message)
+        except Exception:
+            continue
+
+def add_premium(update: Update, context: CallbackContext):
+    if update.message.from_user.id != OWNER_ID:
+        update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    user_id = int(context.args[0])
+    search_count = int(context.args[1])
+    if user_id in user_data:
+        user_data[user_id]['premium_searches'] += search_count
+        save_user_data()
+        update.message.reply_text(f"Added {search_count} premium searches to user {user_id}.")
+    else:
+        update.message.reply_text(f"User {user_id} not found.")
+
+def global_ban(update: Update, context: CallbackContext):
+    if update.message.from_user.id != OWNER_ID:
+        update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    user_id = int(context.args[0])
+    if user_id in user_data:
+        user_data[user_id]['is_banned'] = True
+        save_user_data()
+        update.message.reply_text(f"User {user_id} has been banned.")
+    else:
+        update.message.reply_text(f"User {user_id} not found.")
+
+def history(update: Update, context: CallbackContext):
+    if update.message.from_user.id != OWNER_ID:
+        update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    user_id = int(context.args[0])
+    if user_id in user_data:
+        history = user_data[user_id]['scan_history']
+        update.message.reply_text(f"Scan history for user {user_id}:\n" + '\n'.join(history))
+    else:
+        update.message.reply_text(f"User {user_id} not found.")
 
 def main():
+    install_dependencies()
+
     updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
     dispatcher = updater.dispatcher
 
     dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("stats", stats))
+    dispatcher.add_handler(CommandHandler("broadcast", broadcast, pass_args=True))
+    dispatcher.add_handler(CommandHandler("premium", add_premium, pass_args=True))
+    dispatcher.add_handler(CommandHandler("gban", global_ban, pass_args=True))
+    dispatcher.add_handler(CommandHandler("history", history, pass_args=True))
+    dispatcher.add_handler(MessageHandler(Filters.text & Filters.regex(r'^/url '), handle_message))
     dispatcher.add_handler(CallbackQueryHandler(button))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-    dispatcher.add_handler(MessageHandler(Filters.command, handle_command))
 
     updater.start_polling()
     updater.idle()
 
-def handle_command(update: Update, context: CallbackContext):
-    command = update.message.text
-    if command.startswith('/url '):
-        url = command.split(' ', 1)[1]
-        if url.startswith(('http://', 'https://')):
-            update.message.reply_text("Scanning... This might take a few minutes.")
-            scan_data = scan_url(url)
-            update.message.reply_text(scan_data)
-        else:
-            update.message.reply_text("Invalid URL. Please provide a URL starting with http:// or https://")
-    else:
-        update.message.reply_text("Unknown command. Use /url {web url} to scan a website.")
-
 if __name__ == '__main__':
-    install_dependencies()
     main()
+        
