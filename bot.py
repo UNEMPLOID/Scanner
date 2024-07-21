@@ -1,18 +1,17 @@
-# bot.py
-import json
 import os
+import json
+import socket
+import ssl
+import subprocess
 import whois
 import requests
 import dns.resolver
 import builtwith
 import shodan
-import socket
-import ssl
-import subprocess
 import threading
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
-from telegram.error import BadRequest
+from telegram.error import NetworkError
 
 # Replace placeholders with your actual API keys, bot token, and other details
 SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
@@ -22,41 +21,24 @@ OWNER_USERNAME = '@moon_god_khonsu'
 
 REQUIRED_GROUP = '@fakaoanl'
 REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
-
-# Initialize Shodan API
-shodan_api = shodan.Shodan(SHODAN_API_KEY)
-
-# Load or initialize user data
-if not os.path.exists('users.json'):
-    with open('users.json', 'w') as f:
-        json.dump({}, f)
+users = {}
 
 def load_user_data():
     global users
-    try:
+    if os.path.exists('users.json'):
         with open('users.json', 'r') as f:
             users = json.load(f)
-    except json.JSONDecodeError:
-        users = {}
 
 def save_user_data():
     with open('users.json', 'w') as f:
-        json.dump(users, f)
+        json.dump(users, f, indent=2)
 
 def check_subscription(user_id, bot):
     try:
-        bot.get_chat_member(REQUIRED_GROUP, user_id)
-    except BadRequest as e:
-        if "user not found" in str(e):
-            return False
-    
-    for channel in REQUIRED_CHANNELS:
-        try:
-            bot.get_chat_member(channel, user_id)
-        except BadRequest as e:
-            if "user not found" in str(e):
-                return False
-    return True
+        member_status = bot.get_chat_member(REQUIRED_GROUP, user_id).status
+        return member_status in ['member', 'administrator', 'creator']
+    except NetworkError:
+        return False
 
 def add_premium(update: Update, context: CallbackContext) -> None:
     if update.message.from_user.id != OWNER_ID:
@@ -64,22 +46,25 @@ def add_premium(update: Update, context: CallbackContext) -> None:
         return
     
     args = context.args
-    if len(args) != 2:
-        update.message.reply_text("Usage: /add <user_id> <searches>")
+    if len(args) != 1:
+        update.message.reply_text("Usage: /add <user_id>")
         return
     
-    user_id, searches = int(args[0]), int(args[1])
-    if user_id not in users:
-        users[user_id] = {"searches": 0, "banned": False}
-    users[user_id]["searches"] += searches
+    user_id = int(args[0])
+    if user_id in users:
+        users[user_id]["searches"] += 10
+    else:
+        users[user_id] = {"searches": 10, "banned": False}
+    
     save_user_data()
-    update.message.reply_text(f"Added {searches} searches to user {user_id}.")
+    update.message.reply_text(f"Added premium status to user {user_id}.")
 
 def remove_premium(update: Update, context: CallbackContext) -> None:
     if update.message.from_user.id != OWNER_ID:
         update.message.reply_text("You are not authorized to use this command.")
         return
-            args = context.args
+    
+    args = context.args
     if len(args) != 1:
         update.message.reply_text("Usage: /remove <user_id>")
         return
@@ -260,10 +245,8 @@ def get_web_technologies(domain):
 
 def find_subdomains(domain):
     try:
-        result = subprocess.run(['python3', 'Sublist3r/sublist3r.py', '-d', domain, '-o', 'subdomains.txt'], capture_output=True, text=True)
-        with open('subdomains.txt', 'r') as f:
-            subdomains = f.read().splitlines()
-        return json.dumps(subdomains, indent=2)
+        result = subprocess.run(['sublist3r', '-d', domain], stdout=subprocess.PIPE)
+        return result.stdout.decode('utf-8')
     except Exception as e:
         return f"Error fetching subdomains: {e}"
 
@@ -273,33 +256,21 @@ def button(update: Update, context: CallbackContext) -> None:
 
     if query.data == 'start_scan':
         start_scan(update, context)
-    elif query.data == 'cancel_scan':
-        query.edit_message_text("Scanning process canceled.")
-        if 'scanning' in context.user_data:
-            del context.user_data['scanning']
-    elif query.data == 'scanning':
-        query.edit_message_text("Scanning in progress...")
 
-def main():
+def main() -> None:
     load_user_data()
-
-    # Install Sublist3r if not already installed
-    if not os.path.exists('Sublist3r'):
-        subprocess.run(['git', 'clone', 'https://github.com/aboul3la/Sublist3r.git'])
-        subprocess.run(['pip', 'install', '-r', 'Sublist3r/requirements.txt'])
-
-    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
+    
+    updater = Updater(TELEGRAM_BOT_TOKEN)
     dispatcher = updater.dispatcher
 
     dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("add", add_premium))
-    dispatcher.add_handler(CommandHandler("remove", remove_premium))
-    dispatcher.add_handler(CommandHandler("gban", ban_user))
-    dispatcher.add_handler(CommandHandler("broadcast", broadcast))
+    dispatcher.add_handler(CommandHandler("add", add_premium, pass_args=True))
+    dispatcher.add_handler(CommandHandler("remove", remove_premium, pass_args=True))
+    dispatcher.add_handler(CommandHandler("gban", ban_user, pass_args=True))
+    dispatcher.add_handler(CommandHandler("broadcast", broadcast, pass_args=True))
     dispatcher.add_handler(CommandHandler("stats", stats))
-    dispatcher.add_handler(MessageHandler(Filters.text & Filters.regex(r'^/url '), scan_url))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, lambda update, context: None))
     dispatcher.add_handler(CallbackQueryHandler(button))
+    dispatcher.add_handler(MessageHandler(Filters.text & Filters.regex(r'^/url '), scan_url))
 
     updater.start_polling()
     updater.idle()
