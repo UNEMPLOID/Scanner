@@ -1,329 +1,253 @@
+import logging
 import os
-import json
-import socket
-import ssl
-import subprocess
-import whois
-import requests
-import dns.resolver
-import builtwith
 import shodan
 import threading
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import sublist3r
+import requests
+import json
+import whois
+import dns.resolver
+from datetime import datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
-from telegram.error import NetworkError, Unauthorized
 
 # Replace placeholders with your actual API keys, bot token, and other details
 SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
-TELEGRAM_BOT_TOKEN = '7242640738:AAFl-Rz9Ce3q_smQ41m4Y0ECuHCWMECHMnE'
+TELEGRAM_BOT_TOKEN = '7289883891:AAFIMGy9T9-V8iklbHc3Gl3jPE30ogMIBdY'
 OWNER_ID = 5460343986
 OWNER_USERNAME = '@moon_god_khonsu'
-
 REQUIRED_GROUP = '@fakaoanl'
 REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
 
-# Setup Shodan API
+# Enable logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Create Shodan API instance
 shodan_api = shodan.Shodan(SHODAN_API_KEY)
 
-# User data
-user_data = {}
+# Global data storage for user searches
+user_searches = {}
+user_limits = {}
 
-# Load user data
-if os.path.exists('user_data.json'):
-    with open('user_data.json', 'r') as f:
-        user_data = json.load(f)
+# Helper functions
+def check_subscription(user_id):
+    return user_id in user_limits and user_limits[user_id] > 0
 
-def save_user_data():
-    with open('user_data.json', 'w') as f:
-        json.dump(user_data, f)
+def check_joined_group_and_channels(user_id):
+    # This function should interact with the Telegram API to verify group and channel membership
+    return True  # Replace with actual logic
 
-def install_dependencies():
-    # Install required tools if they are not available
-    dependencies = ['sublist3r']
-    for dep in dependencies:
-        try:
-            subprocess.run(['which', dep], check=True, stdout=subprocess.PIPE)
-        except subprocess.CalledProcessError:
-            subprocess.run(['pip', 'install', dep], check=True)
+def add_premium_user(user_id, search_limit):
+    user_limits[user_id] = search_limit
 
-def start(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-    user_name = update.message.from_user.username
-
-    if user_id not in user_data:
-        user_data[user_id] = {
-            'free_searches': 5,
-            'premium_searches': 0,
-            'is_banned': False,
-            'scan_history': []
-        }
-        save_user_data()
-
-    # Check if user is banned
-    if user_data[user_id]['is_banned']:
-        update.message.reply_text("You are banned from using this bot.")
-        return
-
-    # Check if user is part of required group and channels
-    if not check_subscription(user_id, context.bot):
-        keyboard = [
-            [InlineKeyboardButton("Join Group", url=f"https://t.me/{REQUIRED_GROUP}")],
-            *[InlineKeyboardButton(f"Join Channel {i+1}", url=f"https://t.me/{channel}") for i, channel in enumerate(REQUIRED_CHANNELS)],
-            [InlineKeyboardButton("Check Joined", callback_data='check_joined')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text(
-            "Please join all required channels and groups before using the bot.",
-            reply_markup=reply_markup
-        )
-        return
-
-    # Show welcome message and the scan button
-    keyboard = [
-        [InlineKeyboardButton("Start Scan", callback_data='start_scan')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(
-        f"Welcome {user_name}! Click 'Start Scan' to begin scanning a website.",
-        reply_markup=reply_markup
-    )
-
-def check_subscription(user_id: int, bot):
-    chat_member = bot.get_chat_member(REQUIRED_GROUP, user_id)
-    if chat_member.status not in ['member', 'administrator', 'creator']:
-        return False
-
-    for channel in REQUIRED_CHANNELS:
-        try:
-            chat_member = bot.get_chat_member(channel, user_id)
-            if chat_member.status not in ['member', 'administrator', 'creator']:
-                return False
-        except Exception:
-            return False
-
-    return True
-
-def button(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    
-    if query.data == 'start_scan':
-        query.edit_message_text("Please enter the URL you want to scan.")
-        context.bot_data['waiting_for_url'] = query.message.chat_id
-
-    if query.data == 'check_joined':
-        user_id = query.from_user.id
-        if check_subscription(user_id, context.bot):
-            keyboard = [
-                [InlineKeyboardButton("Start Scan", callback_data='start_scan')]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            query.edit_message_text(
-                "Thank you for joining! Click 'Start Scan' to begin scanning a website.",
-                reply_markup=reply_markup
-            )
-        else:
-            query.edit_message_text(
-                "Please join all required channels and groups before using the bot.\n"
-                f"Group: {REQUIRED_GROUP}\n"
-                f"Channels: {', '.join(REQUIRED_CHANNELS)}"
-            )
-
-def handle_message(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-    chat_id = update.message.chat_id
-
-    # Check if user is banned
-    if user_data[user_id]['is_banned']:
-        update.message.reply_text("You are banned from using this bot.")
-        return
-
-    # Ensure user has joined required group and channels
-    if not check_subscription(user_id, context.bot):
-        update.message.reply_text("Please join all required channels and groups before using the bot.")
-        return
-
-    # Check if user has reached the search limit
-    if user_data[user_id]['free_searches'] <= 0 and user_data[user_id]['premium_searches'] <= 0:
-        keyboard = [
-            [InlineKeyboardButton("Contact Owner", url=f"https://t.me/{OWNER_USERNAME}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text("You have reached the search limit. Please contact the owner to buy more searches.", reply_markup=reply_markup)
-        return
-
-    if chat_id in context.bot_data and context.bot_data['waiting_for_url'] == chat_id:
-        url = update.message.text
-
-        if not url.startswith(('http://', 'https://')):
-            update.message.reply_text("Invalid URL. Please provide a URL starting with http:// or https://")
-            return
-
-        # Decrease search count
-        if user_data[user_id]['premium_searches'] > 0:
-            user_data[user_id]['premium_searches'] -= 1
-        else:
-            user_data[user_id]['free_searches'] -= 1
-        save_user_data()
-
-        # Start scanning process
-        update.message.reply_text("Scanning... This might take a few minutes.")
-        scan_data = scan_url(url)
-
-        # Record scan history
-        user_data[user_id]['scan_history'].append(url)
-        save_user_data()
-
-        # Send scan results
-        update.message.reply_text(scan_data)
-        context.bot_data['waiting_for_url'] = None
-
-def scan_url(url):
-    result = ["Web scanner:\n"]
+def scan_website(url):
+    result = {
+        'whois': '',
+        'ip_geo': '',
+        'real_ip': '',
+        'ssl_info': '',
+        'dns_records': '',
+        'http_headers': {},
+        'web_technologies': {},
+        'subdomains': ''
+    }
 
     # WHOIS Info
     try:
         whois_info = whois.whois(url)
-        result.append("WHOIS Info:")
-        result.append(json.dumps(whois_info, indent=4))
+        result['whois'] = whois_info.text
     except Exception as e:
-        result.append(f"Error fetching WHOIS info: {e}")
+        result['whois'] = f"Error fetching WHOIS info: {str(e)}"
 
     # IP Geolocation
     try:
-        ip = socket.gethostbyname(url)
-        geo_info = requests.get(f'http://ip-api.com/json/{ip}').json()
-        result.append("IP Geolocation:")
-        result.append(json.dumps(geo_info, indent=4))
+        ip_info = requests.get(f'https://ipinfo.io/{url}/json').json()
+        result['ip_geo'] = ip_info
     except Exception as e:
-        result.append(f"Error fetching IP geolocation: {e}")
+        result['ip_geo'] = f"Error fetching IP geolocation: {str(e)}"
 
-    # Real IP Address
+    # SSL Certificate Info
     try:
-        shodan_info = shodan_api.host(ip)
-        result.append("Real IP Address:")
-        result.append(shodan_info['ip_str'])
+        ssl_info = requests.get(f'https://api.ssllabs.com/api/v3/analyze?host={url}').json()
+        result['ssl_info'] = ssl_info
     except Exception as e:
-        result.append(f"Error fetching real IP: {e}")
-
-    # SSL Certificate
-    try:
-        conn = ssl.create_default_context().wrap_socket(socket.socket(), server_hostname=url)
-        conn.connect((url, 443))
-        cert = conn.getpeercert()
-        result.append("SSL Certificate:")
-        result.append(json.dumps(cert, indent=4))
-    except Exception as e:
-        result.append(f"Error fetching SSL info: {e}")
+        result['ssl_info'] = f"Error fetching SSL info: {str(e)}"
 
     # DNS Records
     try:
-        dns_records = dns.resolver.resolve(url, 'A')
-        result.append("DNS Records:")
-        result.append('\n'.join([str(record) for record in dns_records]))
+        dns_info = dns.resolver.resolve(url, 'A')
+        result['dns_records'] = [str(record) for record in dns_info]
     except Exception as e:
-        result.append(f"Error fetching DNS records: {e}")
+        result['dns_records'] = f"Error fetching DNS records: {str(e)}"
 
     # HTTP Headers
     try:
-        headers = requests.get(url).headers
-        result.append("HTTP Headers:")
-        result.append(json.dumps(dict(headers), indent=4))
+        headers_info = requests.head(f'http://{url}').headers
+        result['http_headers'] = dict(headers_info)
     except Exception as e:
-        result.append(f"Error fetching HTTP headers: {e}")
+        result['http_headers'] = f"Error fetching HTTP headers: {str(e)}"
 
     # Web Technologies
     try:
-        tech = builtwith.parse(url)
-        result.append("Web Technologies:")
-        result.append(json.dumps(tech, indent=4))
+        web_technologies_info = shodan_api.search(url)
+        result['web_technologies'] = web_technologies_info['matches'][0]['data']
     except Exception as e:
-        result.append(f"Error fetching web technologies: {e}")
+        result['web_technologies'] = f"Error fetching web technologies: {str(e)}"
 
     # Subdomains
     try:
-        subdomains = subprocess.check_output(['sublist3r', '-d', url])
-        result.append("Subdomains:")
-        result.append(subdomains.decode('utf-8'))
+        subdomains = sublist3r.main(url, 40, savefile=False, ports=None, silent=True, verbose=False, enable_bruteforce=False, engines=None)
+        result['subdomains'] = subdomains
     except Exception as e:
-        result.append(f"Error fetching subdomains: {e}")
+        result['subdomains'] = f"Error fetching subdomains: {str(e)}"
 
-    return '\n'.join(result)
+    return result
+
+# Command handlers
+def start(update: Update, context: CallbackContext):
+    logger.info(f"User {update.message.from_user.id} initiated the bot.")
+    keyboard = [
+        [InlineKeyboardButton("Join Group", url="https://t.me/fakaoanl")],
+        [InlineKeyboardButton("Join Channel 1", url="https://t.me/found_us")],
+        [InlineKeyboardButton("Join Channel 2", url="https://t.me/hacking_Mathod")],
+        [InlineKeyboardButton("Check Joined", callback_data="check_joined")]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    update.message.reply_text(
+        "Welcome to the Subdomain Scanner Bot!\n\n"
+        "Please join our required group and channels, then click 'Check Joined' to proceed.",
+        reply_markup=reply_markup
+    )
+
+def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+
+    if query.data == "check_joined":
+        logger.info(f"User {user_id} pressed 'Check Joined'.")
+        if check_joined_group_and_channels(user_id):
+            query.edit_message_text(text="You have joined all required channels and groups. You can now use the bot.")
+            # Show the scan button
+            keyboard = [
+                [InlineKeyboardButton("Start Scan", callback_data="start_scan")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            query.message.reply_text("You can now start scanning websites.", reply_markup=reply_markup)
+        else:
+            query.edit_message_text(text="Please join all required channels and groups before using the bot.")
+    elif query.data == "start_scan":
+        query.message.reply_text("Please enter the URL you want to scan.")
+
+def scan(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    logger.info(f"User {user_id} requested a scan.")
+
+    if not check_joined_group_and_channels(user_id):
+        update.message.reply_text("Please join all required channels and groups before using the bot.")
+        return
+
+    if not check_subscription(user_id):
+        update.message.reply_text("You have reached your search limit. Please contact the bot owner to buy more searches.")
+        return
+
+    url = update.message.text.strip()
+    if not url:
+        update.message.reply_text("Please provide a valid URL to scan.")
+        return
+
+    update.message.reply_text("Scanning... This might take a few minutes.")
+    result = scan_website(url)
+
+    user_limits[user_id] -= 1
+
+    result_message = f"Web scanner:\n\n"
+    result_message += f"WHOIS Info:\n{result['whois']}\n\n"
+    result_message += f"IP Geolocation:\n{json.dumps(result['ip_geo'], indent=2)}\n\n"
+    result_message += f"Real IP Address:\n{result['real_ip']}\n\n"
+    result_message += f"SSL Certificate:\n{json.dumps(result['ssl_info'], indent=2)}\n\n"
+    result_message += f"DNS Records:\n{result['dns_records']}\n\n"
+    result_message += f"HTTP Headers:\n{json.dumps(result['http_headers'], indent=2)}\n\n"
+    result_message += f"Web Technologies:\n{json.dumps(result['web_technologies'], indent=2)}\n\n"
+    result_message += f"Subdomains:\n{result['subdomains']}\n\n"
+    result_message += f"Join us - @fakaoanl"
+
+    update.message.reply_text(result_message, parse_mode=ParseMode.MARKDOWN)
 
 def stats(update: Update, context: CallbackContext):
-    if update.message.from_user.id != OWNER_ID:
+    user_id = update.message.from_user.id
+
+    if user_id != OWNER_ID:
         update.message.reply_text("You are not authorized to use this command.")
         return
 
-    total_users = len(user_data)
-    total_groups = len(context.bot_data.get('groups', []))
-    update.message.reply_text(f"Total users: {total_users}\nTotal groups: {total_groups}")
+    num_users = len(user_searches)
+    num_groups = len(user_limits)
+    update.message.reply_text(f"Bot Stats:\n\nUsers: {num_users}\nGroups: {num_groups}")
 
 def broadcast(update: Update, context: CallbackContext):
-    if update.message.from_user.id != OWNER_ID:
+    user_id = update.message.from_user.id
+
+    if user_id != OWNER_ID:
         update.message.reply_text("You are not authorized to use this command.")
         return
 
     message = ' '.join(context.args)
-    for user_id in user_data:
+    if not message:
+        update.message.reply_text("Please provide a message to broadcast.")
+        return
+
+    for user in user_searches:
         try:
-            context.bot.send_message(chat_id=user_id, text=message)
-        except Exception:
-            continue
+            context.bot.send_message(chat_id=user, text=message)
+        except Exception as e:
+            logger.error(f"Error sending message to {user}: {str(e)}")
 
-def add_premium(update: Update, context: CallbackContext):
-    if update.message.from_user.id != OWNER_ID:
+    for group in user_limits:
+        try:
+            context.bot.send_message(chat_id=group, text=message)
+        except Exception as e:
+            logger.error(f"Error sending message to {group}: {str(e)}")
+
+    update.message.reply_text("Broadcast message sent.")
+
+def premium(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+
+    if user_id != OWNER_ID:
         update.message.reply_text("You are not authorized to use this command.")
         return
 
-    user_id = int(context.args[0])
-    search_count = int(context.args[1])
-    if user_id in user_data:
-        user_data[user_id]['premium_searches'] += search_count
-        save_user_data()
-        update.message.reply_text(f"Added {search_count} premium searches to user {user_id}.")
-    else:
-        update.message.reply_text(f"User {user_id} not found.")
-
-def global_ban(update: Update, context: CallbackContext):
-    if update.message.from_user.id != OWNER_ID:
-        update.message.reply_text("You are not authorized to use this command.")
+    if len(context.args) != 2:
+        update.message.reply_text("Usage: /premium <user_id> <search_limit>")
         return
 
     user_id = int(context.args[0])
-    if user_id in user_data:
-        user_data[user_id]['is_banned'] = True
-        save_user_data()
-        update.message.reply_text(f"User {user_id} has been banned.")
-    else:
-        update.message.reply_text(f"User {user_id} not found.")
+    search_limit = int(context.args[1])
 
-def history(update: Update, context: CallbackContext):
-    if update.message.from_user.id != OWNER_ID:
-        update.message.reply_text("You are not authorized to use this command.")
-        return
+    add_premium_user(user_id, search_limit)
+    update.message.reply_text(f"User {user_id} has been given a limit of {search_limit} searches.")
 
-    user_id = int(context.args[0])
-    if user_id in user_data:
-        history = user_data[user_id]['scan_history']
-        update.message.reply_text(f"Scan history for user {user_id}:\n" + '\n'.join(history))
-    else:
-        update.message.reply_text(f"User {user_id} not found.")
+def error_handler(update: Update, context: CallbackContext):
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+    update.message.reply_text("An error occurred. Please try again later.")
 
 def main():
-    install_dependencies()
+    os.system("pip install -r requirements.txt")
 
     updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
     dispatcher = updater.dispatcher
 
     dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("stats", stats))
-    dispatcher.add_handler(CommandHandler("broadcast", broadcast, pass_args=True))
-    dispatcher.add_handler(CommandHandler("premium", add_premium, pass_args=True))
-    dispatcher.add_handler(CommandHandler("gban", global_ban, pass_args=True))
-    dispatcher.add_handler(CommandHandler("history", history, pass_args=True))
-    dispatcher.add_handler(MessageHandler(Filters.text & Filters.regex(r'^/url '), handle_message))
     dispatcher.add_handler(CallbackQueryHandler(button))
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, scan))
+    dispatcher.add_handler(CommandHandler("stats", stats))
+    dispatcher.add_handler(CommandHandler("broadcast", broadcast))
+    dispatcher.add_handler(CommandHandler("premium", premium))
+    dispatcher.add_error_handler(error_handler)
 
     updater.start_polling()
     updater.idle()
