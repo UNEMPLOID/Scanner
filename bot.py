@@ -198,7 +198,7 @@ def scan(update: Update, context: CallbackContext):
     result_message += f"HTTP Headers:\n{json.dumps(result['http_headers'], indent=2)}\n\n"
     result_message += f"Web Technologies:\n{json.dumps(result['web_technologies'], indent=2)}\n\n"
     result_message += f"Subdomains:\n{result['subdomains']}\n\n"
-    result_message += f"Join us - @f
+    result_message += f"Join us - @Indian_hacker_Group\n\n"
 
 
 
