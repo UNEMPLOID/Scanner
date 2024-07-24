@@ -171,24 +171,24 @@ def scan(update: Update, context: CallbackContext):
     user_limits[user_id] -= 1
 
     result_messages = []
-    result_messages.append(f"Web scanner:\n\n")
-    result_messages.append(f"WHOIS Info:\n```\n{result['whois']}\n```\n\n")
-    result_messages.append(f"IP Geolocation:\n```\n{json.dumps(result['ip_geo'], indent=2)}\n```\n\n")
-    result_messages.append(f"Real IP Address:\n```\n{result['real_ip']}\n```\n\n")
-    result_messages.append(f"SSL Certificate:\n```\n{json.dumps(result['ssl_info'], indent=2)}\n```\n\n")
-    result_messages.append(f"DNS Records:\n```\n{result['dns_records']}\n```\n\n")
-    result_messages.append(f"HTTP Headers:\n```\n{json.dumps(result['http_headers'], indent=2)}\n```\n\n")
-    result_messages.append(f"Web Technologies:\n```\n{json.dumps(result['web_technologies'], indent=2)}\n```\n\n")
-    result_messages.append(f"Subdomains:\n```\n{result['subdomains']}\n```\n\n")
+    result_messages.append("Web scanner:\n\n")
+    result_messages.append(f"WHOIS Info:\n{result['whois']}\n\n")
+    result_messages.append(f"IP Geolocation:\n{json.dumps(result['ip_geo'], indent=2)}\n\n")
+    result_messages.append(f"Real IP Address:\n{result['real_ip']}\n\n")
+    result_messages.append(f"SSL Certificate:\n{json.dumps(result['ssl_info'], indent=2)}\n\n")
+    result_messages.append(f"DNS Records:\n{result['dns_records']}\n\n")
+    result_messages.append(f"HTTP Headers:\n{json.dumps(result['http_headers'], indent=2)}\n\n")
+    result_messages.append(f"Web Technologies:\n{json.dumps(result['web_technologies'], indent=2)}\n\n")
+    result_messages.append(f"Subdomains:\n{result['subdomains']}\n\n")
     result_messages.append(f"Join us - @fakaoanl")
 
     try:
         for msg in result_messages:
             if len(msg) > 4096:
                 for i in range(0, len(msg), 4096):
-                    update.message.reply_text(msg[i:i+4096], parse_mode=ParseMode.MARKDOWN)
+                    update.message.reply_text(msg[i:i+4096])
             else:
-                update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+                update.message.reply_text(msg)
     except BadRequest as e:
         update.message.reply_text(f"An error occurred while sending the message: {str(e)}")
 
