@@ -34,7 +34,7 @@ user_limits = {}
 
 # Helper functions
 def check_subscription(user_id):
-    return user_id in user_limits and user_limits[user_id] > 0
+    return user_limits.get(user_id, 0) > 0
 
 def check_joined_group_and_channels(user_id):
     # This function should interact with the Telegram API to verify group and channel membership
@@ -151,6 +151,9 @@ def scan(update: Update, context: CallbackContext):
         update.message.reply_text("Please join all required channels and groups before using the bot.")
         return
 
+    if user_id not in user_limits:
+        user_limits[user_id] = 2  # Give 2 free scans
+
     if not check_subscription(user_id):
         update.message.reply_text("You have reached your search limit. Please contact the bot owner to buy more searches.")
         return
@@ -257,4 +260,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-      
