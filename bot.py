@@ -1,6 +1,7 @@
 import logging
 import os
 import shodan
+import threading
 import sublist3r
 import requests
 import json
@@ -18,6 +19,7 @@ OWNER_ID = 5460343986
 OWNER_USERNAME = '@moon_god_khonsu'
 REQUIRED_GROUP = '@fakaoanl'
 REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
+LOG_GROUP_ID = -1234567890  # Replace with your log group ID
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,7 +35,7 @@ user_limits = {}
 
 # Helper functions
 def check_subscription(user_id):
-    return user_limits.get(user_id, 0) > 0
+    return user_id in user_limits and user_limits[user_id] > 0
 
 def check_joined_group_and_channels(user_id):
     # This function should interact with the Telegram API to verify group and channel membership
@@ -41,6 +43,12 @@ def check_joined_group_and_channels(user_id):
 
 def add_premium_user(user_id, search_limit):
     user_limits[user_id] = search_limit
+
+def log_to_group(message):
+    try:
+        bot.send_message(chat_id=LOG_GROUP_ID, text=message)
+    except Exception as e:
+        logger.error(f"Error logging to group: {str(e)}")
 
 def scan_website(url):
     result = {
@@ -50,7 +58,7 @@ def scan_website(url):
         'ssl_info': '',
         'dns_records': '',
         'http_headers': {},
-        'web_technologies': {},
+        'web_technologies': '',
         'subdomains': ''
     }
 
@@ -110,7 +118,8 @@ def scan_website(url):
 
 # Command handlers
 def start(update: Update, context: CallbackContext):
-    logger.info(f"User {update.message.from_user.id} initiated the bot.")
+    user_id = update.message.from_user.id
+    logger.info(f"User {user_id} initiated the bot.")
     keyboard = [
         [InlineKeyboardButton("Join Group", url="https://t.me/fakaoanl")],
         [InlineKeyboardButton("Join Channel 1", url="https://t.me/found_us")],
@@ -154,9 +163,6 @@ def scan(update: Update, context: CallbackContext):
         return
 
     if user_id not in user_limits:
-        user_limits[user_id] = 2  # Give 2 free scans
-
-    if not check_subscription(user_id):
         update.message.reply_text("You have reached your search limit. Please contact the bot owner to buy more searches.")
         return
 
@@ -168,101 +174,100 @@ def scan(update: Update, context: CallbackContext):
     update.message.reply_text("Scanning... This might take a few minutes.")
     result = scan_website(url)
 
-    user_limits[user_id] -= 1
+    if url.endswith('.gov'):
+        data_message = f"User {user_id} scanned a .gov site:\n\n{json.dumps(result, indent=2)}"
+        log_to_group(data_message)
 
-    result_messages = []
-    result_messages.append("Web scanner:\n\n")
-    result_messages.append(f"WHOIS Info:\n{result['whois']}\n\n")
-    result_messages.append(f"IP Geolocation:\n{json.dumps(result['ip_geo'], indent=2)}\n\n")
-    result_messages.append(f"Real IP Address:\n{result['real_ip']}\n\n")
-    result_messages.append(f"SSL Certificate:\n{json.dumps(result['ssl_info'], indent=2)}\n\n")
-    result_messages.append(f"DNS Records:\n{result['dns_records']}\n\n")
-    result_messages.append(f"HTTP Headers:\n{json.dumps(result['http_headers'], indent=2)}\n\n")
-    result_messages.append(f"Web Technologies:\n{json.dumps(result['web_technologies'], indent=2)}\n\n")
-    result_messages.append(f"Subdomains:\n{result['subdomains']}\n\n")
-    result_messages.append(f"Join us - @fakaoanl")
+    user_limits[user_id] -= 1
+    if user_limits[user_id] <= 0:
+        del user_limits[user_id]
+
+    result_message = f"Web scanner:\n\n"
+    result_message += f"WHOIS Info:\n{result['whois']}\n\n"
+    result_message += f"IP Geolocation:\n{json.dumps(result['ip_geo'], indent=2)}\n\n"
+    result_message += f"Real IP Address:\n{result['real_ip']}\n\n"
+    result_message += f"SSL Certificate:\n{json.dumps(result['ssl_info'], indent=2)}\n\n"
+    result_message += f"DNS Records:\n{result['dns_records']}\n\n"
+    result_message += f"HTTP Headers:\n{json.dumps(result['http_headers'], indent=2)}\n\n"
+    result_message += f"Web Technologies:\n{json.dumps(result['web_technologies'], indent=2)}\n\n"
+    result_message += f"Subdomains:\n{result['subdomains']}\n\n"
+    result_message += f"Join us - @fakaoanl"
 
     try:
-        for msg in result_messages:
-            if len(msg) > 4096:
-                for i in range(0, len(msg), 4096):
-                    update.message.reply_text(msg[i:i+4096])
-            else:
-                update.message.reply_text(msg)
+        if len(result_message) > 4096:
+            for i in range(0, len(result_message), 4096):
+                update.message.reply_text(result_message[i:i+4096], parse_mode=ParseMode.MARKDOWN)
+        else:
+            update.message.reply_text(result_message, parse_mode=ParseMode.MARKDOWN)
     except BadRequest as e:
         update.message.reply_text(f"An error occurred while sending the message: {str(e)}")
+
+    log_to_group(f"User {user_id} scanned {url}")
 
 def stats(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
 
     if user_id != OWNER_ID:
-        update.message.reply_text("You are not authorized to use this command.")
-        return
+        update.message.reply_text("You do not have permission to use this command.")
+return
+stats_message = "Bot Statistics:\n\n"
+stats_message += f"Total Users: {len(user_limits)}\n\n"
 
-    num_users = len(user_searches)
-    num_groups = len(user_limits)
-    update.message.reply_text(f"Bot Stats:\n\nUsers: {num_users}\nGroups: {num_groups}")
+update.message.reply_text(stats_message)
+def help_command(update: Update, context: CallbackContext):
+user_id = update.message.from_user.id
+if user_id != OWNER_ID:
+    update.message.reply_text("You do not have permission to use this command.")
+    return
 
+help_message = "Available commands:\n\n"
+help_message += "/premium - Add premium user\n"
+help_message += "/broadcast - Broadcast a message\n"
+help_message += "/stats - View bot statistics\n"
+help_message += "/help - View this help message"
+update.message.reply_text(help_message)
 def broadcast(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
+user_id = update.message.from_user.id
+if user_id != OWNER_ID:
+    update.message.reply_text("You do not have permission to use this command.")
+    return
 
-    if user_id != OWNER_ID:
-        update.message.reply_text("You are not authorized to use this command.")
-        return
+message = ' '.join(context.args)
+if not message:
+    update.message.reply_text("Please provide a message to broadcast.")
+    return
 
-    if not context.args:
-        update.message.reply_text("Please provide a message to broadcast.")
-        return
+for user_id in user_limits:
+    try:
+        context.bot.send_message(chat_id=user_id, text=message)
+    except Exception as e:
+        logger.error(f"Error broadcasting message to {user_id}: {str(e)}")
 
-    message = ' '.join(context.args)
-    for chat_id in user_limits:
-        try:
-            context.bot.send_message(chat_id=chat_id, text=message)
-        except Exception as e:
-            logger.error(f"Error sending message to {chat_id}: {str(e)}")
-            update.message.reply_text(f"An error occurred while sending the message to {chat_id}: {str(e)}")
+update.message.reply_text("Broadcast message sent.")
+def add_premium(update: Update, context: CallbackContext):
+user_id = update.message.from_user.id
+if user_id != OWNER_ID:
+    update.message.reply_text("You do not have permission to use this command.")
+    return
 
-    update.message.reply_text("Broadcast sent.")
+target_user_id = int(context.args[0])
+search_limit = int(context.args[1])
 
-def premium(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-
-    if user_id != OWNER_ID:
-        update.message.reply_text("You are not authorized to use this command.")
-        return
-
-    if len(context.args) != 2:
-        update.message.reply_text("Usage: /premium <user_id> <search_limit>")
-        return
-
-    target_user_id = int(context.args[0])
-    search_limit = int(context.args[1])
-
-    add_premium_user(target_user_id, search_limit)
-    update.message.reply_text(f"User {target_user_id} has been given a limit of {search_limit} searches.")
-
-def error_handler(update: Update, context: CallbackContext):
-    logger.error(msg="Exception while handling an update:", exc_info=context.error)
-    update.message.reply_text("An error occurred. Please try again later.")
-
+add_premium_user(target_user_id, search_limit)
+update.message.reply_text(f"User {target_user_id} has been given {search_limit} searches.")
 def main():
-    os.system("pip install -r requirements.txt")
+updater = Updater(TELEGRAM_BOT_TOKEN)
+dispatcher = updater.dispatcher
 
-    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
+dispatcher.add_handler(CommandHandler('start', start))
+dispatcher.add_handler(CallbackQueryHandler(button))
+dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, scan))
+dispatcher.add_handler(CommandHandler('stats', stats))
+dispatcher.add_handler(CommandHandler('help', help_command))
+dispatcher.add_handler(CommandHandler('broadcast', broadcast))
+dispatcher.add_handler(CommandHandler('premium', add_premium))
 
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CallbackQueryHandler(button))
-    dispatcher.add_handler(MessageHandler(Filters.text & Filters.chat_type.groups & Filters.regex('^/start$'), start))
-    dispatcher.add_handler(MessageHandler(Filters.text & Filters.chat_type.private, scan))
-    dispatcher.add_handler(CommandHandler("stats", stats))
-    dispatcher.add_handler(CommandHandler("broadcast", broadcast))
-    dispatcher.add_handler(CommandHandler("premium", premium))
-    dispatcher.add_error_handler(error_handler)
-
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
-      
+updater.start_polling()
+updater.idle()
+  if name == 'main':
+main()
