@@ -199,11 +199,6 @@ def scan(update: Update, context: CallbackContext):
     result_message += f"Web Technologies:\n{json.dumps(result['web_technologies'], indent=2)}\n\n"
     result_message += f"Subdomains:\n{result['subdomains']}\n\n"
     result_message += f"Join us - @Indian_hacker_Group\n\n"
-
-
-
-akaoanl"
-
     try:
         update.message.reply_text(result_message, parse_mode=ParseMode.MARKDOWN_V2)
     except BadRequest as e:
