@@ -215,6 +215,7 @@ stats_message += f"Total Users: {len(user_limits)}\n\n"
 
 update.message.reply_text(stats_message)
 def help_command(update: Update, context: CallbackContext):
+  
 user_id = update.message.from_user.id
 if user_id != OWNER_ID:
     update.message.reply_text("You do not have permission to use this command.")
