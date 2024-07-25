@@ -16,7 +16,7 @@ SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
 TELEGRAM_BOT_TOKEN = '7289883891:AAE-zMR_5Ln0GMknhgSeYZrmUGd0UsMt5qA'
 OWNER_ID = 5460343986
 OWNER_USERNAME = '@moon_god_khonsu'
-LOG_GROUP_ID = -1001234567890  # Replace with your log group ID
+LOG_GROUP_ID = -1002233757002  # Replace with your log group ID
 REQUIRED_GROUP = '@fakaoanl'
 REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
 
