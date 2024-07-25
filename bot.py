@@ -16,7 +16,7 @@ SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
 TELEGRAM_BOT_TOKEN = '7289883891:AAE-zMR_5Ln0GMknhgSeYZrmUGd0UsMt5qA'
 OWNER_ID = 5460343986
 OWNER_USERNAME = '@moon_god_khonsu'
-LOG_GROUP_ID = -1002233757002  # Replace with your log group ID
+LOG_GROUP_ID = -1001234567890  # Replace with your log group ID
 REQUIRED_GROUP = '@fakaoanl'
 REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
 
@@ -31,6 +31,7 @@ shodan_api = shodan.Shodan(SHODAN_API_KEY)
 # Global data storage for user searches
 user_searches = {}
 user_limits = {}
+banned_users = set()
 
 # Helper functions
 def check_subscription(user_id):
@@ -42,6 +43,13 @@ def check_joined_group_and_channels(user_id):
 
 def add_premium_user(user_id, search_limit):
     user_limits[user_id] = search_limit
+
+def ban_user(user_id):
+    banned_users.add(user_id)
+
+def unban_user(user_id):
+    if user_id in banned_users:
+        banned_users.remove(user_id)
 
 def scan_website(url):
     result = {
@@ -153,7 +161,16 @@ def button(update: Update, context: CallbackContext):
 def scan(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     username = update.message.from_user.username
+
+    # Ensure the bot does not respond to random messages
+    if update.message.chat.type != 'private':
+        return
+
     logger.info(f"User {user_id} (@{username}) requested a scan.")
+
+    if user_id in banned_users:
+        update.message.reply_text("You are banned from using this bot.")
+        return
 
     if not check_joined_group_and_channels(user_id):
         update.message.reply_text("Please join all required channels and groups before using the bot.")
@@ -196,7 +213,7 @@ def scan(update: Update, context: CallbackContext):
     try:
         if len(result_message) > 4096:
             for i in range(0, len(result_message), 4096):
-                update.message.reply_text(result_message[i:i+4096], parse_mode=ParseMode.MARKDOWN)
+                update.message.reply_text(result_message[i:i + 4096], parse_mode=ParseMode.MARKDOWN)
         else:
             update.message.reply_text(result_message, parse_mode=ParseMode.MARKDOWN)
     except BadRequest as e:
@@ -212,23 +229,106 @@ def help_command(update: Update, context: CallbackContext):
             "/premium - Add premium users\n"
             "/broadcast - Broadcast a message to all users\n"
             "/statistics - View bot statistics\n"
+            "/ban - Ban a user\n"
+            "/unban - Unban a user\n"
             "/help - Show this help message"
         )
     else:
         update.message.reply_text("You do not have permission to use this command.")
 
+def premium_command(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if user_id != OWNER_ID:
+        update.message.reply_text("You do not have permission to use this command.")
+        return
+
+    args = context.args
+    if len(args) != 2:
+        update.message.reply_text("Usage: /premium <user_id> <search_limit>")
+        return
+
+    target_user_id = int(args[0])
+    search_limit = int(args[1])
+    add_premium_user(target_user_id, search_limit)
+    update.message.reply_text(f"User {target_user_id} has been given {search_limit} search limit.")
+
+def ban_command(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if user_id != OWNER_ID:
+        update.message.reply_text("You do not have permission to use this command.")
+        return
+
+    args = context.args
+    if len(args) != 1:
+        update.message.reply_text("Usage: /ban <user_id>")
+        return
+
+    target_user_id = int(args[0])
+    ban_user(target_user_id)
+    update.message.reply_text(f"User {target_user_id} has been banned from using the bot.")
+
+def unban_command(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if user_id != OWNER_ID:
+        update.message.reply_text("You do not have permission to use this command.")
+        return
+
+    args = context.args
+    if len(args) != 1:
+        update.message.reply_text("Usage: /unban <user_id>")
+        return
+
+    target_user_id = int(args[0])
+    unban_user(target_user_id)
+    update.message.reply_text(f"User {target_user_id} has been unbanned.")
+
+def broadcast_command(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if user_id != OWNER_ID:
+        update.message.reply_text("You do not have permission to use this command.")
+        return
+
+    message = " ".join(context.args)
+    if not message:
+        update.message.reply_text("Usage: /broadcast <message>")
+        return
+
+    for user_id in user_limits.keys():
+        context.bot.send_message(chat_id=user_id, text=message)
+
+    update.message.reply_text("Broadcast message sent.")
+
+def statistics_command(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    if user_id != OWNER_ID:
+        update.message.reply_text("You do not have permission to use this command.")
+        return
+
+    total_users = len(user_limits)
+    premium_users = sum(1 for limit in user_limits.values() if limit > 1)
+    banned_users_count = len(banned_users)
+
+    update.message.reply_text(
+        f"Total users: {total_users}\n"
+        f"Premium users: {premium_users}\n"
+        f"Banned users: {banned_users_count}"
+    )
+
 def main():
     updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
-
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CallbackQueryHandler(button))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, scan))
+    dp.add_handler(MessageHandler(Filters.text & Filters.private, scan))
     dp.add_handler(CommandHandler("help", help_command))
+    dp.add_handler(CommandHandler("premium", premium_command, pass_args=True))
+    dp.add_handler(CommandHandler("ban", ban_command, pass_args=True))
+    dp.add_handler(CommandHandler("unban", unban_command, pass_args=True))
+    dp.add_handler(CommandHandler("broadcast", broadcast_command, pass_args=True))
+    dp.add_handler(CommandHandler("statistics", statistics_command))
 
     updater.start_polling()
-
     updater.idle()
 
 if __name__ == '__main__':
