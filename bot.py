@@ -1,7 +1,6 @@
 import logging
 import os
 import shodan
-import threading
 import sublist3r
 import requests
 import json
@@ -16,10 +15,10 @@ from telegram.error import BadRequest
 SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
 TELEGRAM_BOT_TOKEN = '7289883891:AAE-zMR_5Ln0GMknhgSeYZrmUGd0UsMt5qA'
 OWNER_ID = 5460343986
-LOG_GROUP_ID = -1002233757002  # Replace with your log group ID
+OWNER_USERNAME = '@moon_god_khonsu'
+LOG_GROUP_ID = -1001234567890  # Replace with your log group ID
 REQUIRED_GROUP = '@fakaoanl'
 REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
-FREE_SEARCH_LIMIT = 1
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -29,18 +28,11 @@ logger = logging.getLogger(__name__)
 # Create Shodan API instance
 shodan_api = shodan.Shodan(SHODAN_API_KEY)
 
-# Global data storage for user searches and limits
+# Global data storage for user searches
 user_searches = {}
 user_limits = {}
 
 # Helper functions
-def log_user_activity(message):
-    """ Logs user activity to the log group. """
-    try:
-        bot.send_message(chat_id=LOG_GROUP_ID, text=message)
-    except Exception as e:
-        logger.error(f"Error logging user activity: {str(e)}")
-
 def check_subscription(user_id):
     return user_id in user_limits and user_limits[user_id] > 0
 
@@ -52,9 +44,6 @@ def add_premium_user(user_id, search_limit):
     user_limits[user_id] = search_limit
 
 def scan_website(url):
-    if url == "falconsec.net":
-        return "Data for falconsec.net is not provided."
-
     result = {
         'whois': '',
         'ip_geo': '',
@@ -76,10 +65,7 @@ def scan_website(url):
     # IP Geolocation
     try:
         ip_info = requests.get(f'https://ipinfo.io/{url}/json').json()
-        if 'error' in ip_info:
-            result['ip_geo'] = f"Error fetching IP geolocation: {ip_info['error']['message']}"
-        else:
-            result['ip_geo'] = ip_info
+        result['ip_geo'] = ip_info
     except Exception as e:
         result['ip_geo'] = f"Error fetching IP geolocation: {str(e)}"
 
@@ -123,8 +109,12 @@ def scan_website(url):
 # Command handlers
 def start(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
-    log_user_activity(f"User {user_id} started the bot.")
+    username = update.message.from_user.username
+    logger.info(f"User {user_id} (@{username}) initiated the bot.")
     
+    # Log the user start event
+    context.bot.send_message(chat_id=LOG_GROUP_ID, text=f"User {user_id} (@{username}) started the bot.")
+
     keyboard = [
         [InlineKeyboardButton("Join Group", url="https://t.me/fakaoanl")],
         [InlineKeyboardButton("Join Channel 1", url="https://t.me/found_us")],
@@ -143,9 +133,10 @@ def start(update: Update, context: CallbackContext):
 def button(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = query.from_user.id
-    log_user_activity(f"User {user_id} pressed '{query.data}'.")
+    username = query.from_user.username
 
     if query.data == "check_joined":
+        logger.info(f"User {user_id} (@{username}) pressed 'Check Joined'.")
         if check_joined_group_and_channels(user_id):
             query.edit_message_text(text="You have joined all required channels and groups. You can now use the bot.")
             # Show the scan button
@@ -161,7 +152,8 @@ def button(update: Update, context: CallbackContext):
 
 def scan(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
-    log_user_activity(f"User {user_id} requested a scan.")
+    username = update.message.from_user.username
+    logger.info(f"User {user_id} (@{username}) requested a scan.")
 
     if not check_joined_group_and_channels(user_id):
         update.message.reply_text("Please join all required channels and groups before using the bot.")
@@ -176,16 +168,17 @@ def scan(update: Update, context: CallbackContext):
         update.message.reply_text("Please provide a valid URL to scan.")
         return
 
-    if url.endswith('.gov'):
-        result = scan_website(url)
-        if isinstance(result, str):
-            # Forward result to the owner if it's a message
-            context.bot.send_message(chat_id=OWNER_ID, text=f"User {user_id} scanned a .gov site:\n\n{result}")
-        else:
-            context.bot.send_message(chat_id=OWNER_ID, text=f"User {user_id} scanned a .gov site:\n\n{json.dumps(result, indent=2)}")
-    
+    # Check for falconsec.net domain
+    if 'falconsec.net' in url:
+        update.message.reply_text("Data for falconsec.net cannot be provided.")
+        return
+
     update.message.reply_text("Scanning... This might take a few minutes.")
     result = scan_website(url)
+
+    # If the scanned site is a .gov domain, forward the data to the owner
+    if url.endswith('.gov'):
+        context.bot.send_message(chat_id=OWNER_ID, text=f"User {user_id} (@{username}) scanned a .gov site: {url}\nData: {json.dumps(result, indent=2)}")
 
     user_limits[user_id] -= 1
 
@@ -198,43 +191,44 @@ def scan(update: Update, context: CallbackContext):
     result_message += f"HTTP Headers:\n{json.dumps(result['http_headers'], indent=2)}\n\n"
     result_message += f"Web Technologies:\n{json.dumps(result['web_technologies'], indent=2)}\n\n"
     result_message += f"Subdomains:\n{result['subdomains']}\n\n"
-    result_message += f"Join us - @Indian_hacker_Group\n\n"
+    result_message += f"Join us - @fakaoanl"
+
     try:
-        update.message.reply_text(result_message, parse_mode=ParseMode.MARKDOWN_V2)
+        if len(result_message) > 4096:
+            for i in range(0, len(result_message), 4096):
+                update.message.reply_text(result_message[i:i+4096], parse_mode=ParseMode.MARKDOWN)
+        else:
+            update.message.reply_text(result_message, parse_mode=ParseMode.MARKDOWN)
     except BadRequest as e:
-        logger.error(f"Error sending message: {str(e)}")
-        update.message.reply_text("An error occurred while sending the message.")
+        update.message.reply_text(f"An error occurred while sending the message: {str(e)}")
+
+    # Log the scan event
+    context.bot.send_message(chat_id=LOG_GROUP_ID, text=f"User {user_id} (@{username}) scanned site: {url}\nResult: {json.dumps(result, indent=2)}")
 
 def help_command(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     if user_id == OWNER_ID:
-        help_text = (
-            "/premium - Add premium access\n"
-            "/broadcast - Send a message to all users\n"
-            "/stats - Show bot statistics\n"
-            "/blocklist - Manage blocked users\n"
+        update.message.reply_text(
+            "/premium - Add premium users\n"
+            "/broadcast - Broadcast a message to all users\n"
+            "/statistics - View bot statistics\n"
+            "/help - Show this help message"
         )
-        update.message.reply_text(f"Available commands:\n{help_text}")
     else:
-        update.message.reply_text("You are not authorized to use this command.")
+        update.message.reply_text("You do not have permission to use this command.")
 
 def main():
-    # Create the Updater and pass it your bot's token.
-    updater = Updater(TELEGRAM_BOT_TOKEN)
+    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
 
-    # Get the dispatcher to register handlers
     dp = updater.dispatcher
 
-    # Register handlers
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("help", help_command))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, scan))
     dp.add_handler(CallbackQueryHandler(button))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, scan))
+    dp.add_handler(CommandHandler("help", help_command))
 
-    # Start the Bot
     updater.start_polling()
 
-    # Run the bot until you send a signal to stop
     updater.idle()
 
 if __name__ == '__main__':
