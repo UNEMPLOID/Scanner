@@ -18,6 +18,7 @@ OWNER_ID = 5460343986
 OWNER_USERNAME = '@moon_god_khonsu'
 REQUIRED_GROUP = '@fakaoanl'
 REQUIRED_CHANNELS = ['@found_us', '@hacking_Mathod']
+LOGGER_GROUP_ID = -1002233757002  # Replace with your logger group ID
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -42,6 +43,13 @@ def check_joined_group_and_channels(user_id):
 def add_premium_user(user_id, search_limit):
     user_limits[user_id] = search_limit
 
+def strip_protocol(url):
+    if url.startswith('http://'):
+        return url[7:]
+    elif url.startswith('https://'):
+        return url[8:]
+    return url
+
 def scan_website(url):
     result = {
         'whois': '',
@@ -54,51 +62,56 @@ def scan_website(url):
         'subdomains': ''
     }
 
+    if url == 'falconsec.net':
+        return result  # Do not provide data for the restricted site
+
+    domain = strip_protocol(url)
+
     # WHOIS Info
     try:
-        whois_info = whois.whois(url)
+        whois_info = whois.whois(domain)
         result['whois'] = whois_info.text
     except Exception as e:
         result['whois'] = f"Error fetching WHOIS info: {str(e)}"
 
     # IP Geolocation
     try:
-        ip_info = requests.get(f'https://ipinfo.io/{url}/json').json()
+        ip_info = requests.get(f'https://ipinfo.io/{domain}/json').json()
         result['ip_geo'] = ip_info
     except Exception as e:
         result['ip_geo'] = f"Error fetching IP geolocation: {str(e)}"
 
     # SSL Certificate Info
     try:
-        ssl_info = requests.get(f'https://api.ssllabs.com/api/v3/analyze?host={url}').json()
+        ssl_info = requests.get(f'https://api.ssllabs.com/api/v3/analyze?host={domain}').json()
         result['ssl_info'] = ssl_info
     except Exception as e:
         result['ssl_info'] = f"Error fetching SSL info: {str(e)}"
 
     # DNS Records
     try:
-        dns_info = dns.resolver.resolve(url, 'A')
+        dns_info = dns.resolver.resolve(domain, 'A')
         result['dns_records'] = [str(record) for record in dns_info]
     except Exception as e:
         result['dns_records'] = f"Error fetching DNS records: {str(e)}"
 
     # HTTP Headers
     try:
-        headers_info = requests.head(f'http://{url}').headers
+        headers_info = requests.head(f'http://{domain}').headers
         result['http_headers'] = dict(headers_info)
     except Exception as e:
         result['http_headers'] = f"Error fetching HTTP headers: {str(e)}"
 
     # Web Technologies
     try:
-        web_technologies_info = shodan_api.search(url)
+        web_technologies_info = shodan_api.search(domain)
         result['web_technologies'] = web_technologies_info['matches'][0]['data']
     except Exception as e:
         result['web_technologies'] = f"Error fetching web technologies: {str(e)}"
 
     # Subdomains
     try:
-        subdomains = sublist3r.main(url, 40, savefile=False, ports=None, silent=True, verbose=False, enable_bruteforce=False, engines=None)
+        subdomains = sublist3r.main(domain, 40, savefile=False, ports=None, silent=True, verbose=False, enable_bruteforce=False, engines=None)
         result['subdomains'] = subdomains
     except Exception as e:
         result['subdomains'] = f"Error fetching subdomains: {str(e)}"
@@ -151,7 +164,7 @@ def scan(update: Update, context: CallbackContext):
         return
 
     if user_id not in user_limits:
-        user_limits[user_id] = 2  # Give 2 free scans
+        user_limits[user_id] = 1  # Give 1 free scan
 
     if not check_subscription(user_id):
         update.message.reply_text("You have reached your search limit. Please contact the bot owner to buy more searches.")
@@ -168,15 +181,15 @@ def scan(update: Update, context: CallbackContext):
     user_limits[user_id] -= 1
 
     result_messages = []
-    result_messages.append(f"Web scanner:\n\n")
-    result_messages.append(f"WHOIS Info:\n{result['whois']}\n\n")
-    result_messages.append(f"IP Geolocation:\n{json.dumps(result['ip_geo'], indent=2)}\n\n")
-    result_messages.append(f"Real IP Address:\n{result['real_ip']}\n\n")
-    result_messages.append(f"SSL Certificate:\n{json.dumps(result['ssl_info'], indent=2)}\n\n")
-    result_messages.append(f"DNS Records:\n{result['dns_records']}\n\n")
-    result_messages.append(f"HTTP Headers:\n{json.dumps(result['http_headers'], indent=2)}\n\n")
-    result_messages.append(f"Web Technologies:\n{json.dumps(result['web_technologies'], indent=2)}\n\n")
-    result_messages.append(f"Subdomains:\n{result['subdomains']}\n\n")
+    result_messages.append(f"*Web scanner:*\n\n")
+    result_messages.append(f"*WHOIS Info:*\n{result['whois']}\n\n")
+    result_messages.append(f"*IP Geolocation:*\n{json.dumps(result['ip_geo'], indent=2)}\n\n")
+    result_messages.append(f"*Real IP Address:*\n{result['real_ip']}\n\n")
+    result_messages.append(f"*SSL Certificate:*\n{json.dumps(result['ssl_info'], indent=2)}\n\n")
+    result_messages.append(f"*DNS Records:*\n{result['dns_records']}\n\n")
+    result_messages.append(f"*HTTP Headers:*\n{json.dumps(result['http_headers'], indent=2)}\n\n")
+    result_messages.append(f"*Web Technologies:*\n{json.dumps(result['web_technologies'], indent=2)}\n\n")
+    result_messages.append(f"*Subdomains:*\n{result['subdomains']}\n\n")
     result_messages.append(f"Join us - @fakaoanl")
 
     try:
@@ -188,6 +201,15 @@ def scan(update: Update, context: CallbackContext):
                 update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
     except BadRequest as e:
         update.message.reply_text(f"An error occurred while sending the message: {str(e)}")
+        logger.error(f"Error while sending message to user {user_id}: {str(e)}")
+
+    user_searches[user_id] = user_searches.get(user_id, 0) + 1
+
+    # Log the scan to the admin group
+    context.bot.send_message(
+        chat_id=LOGGER_GROUP_ID,
+        text=f"User {update.message.from_user.username} ({user_id}) performed a scan on {url} at {datetime.now()}."
+    )
 
 def stats(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
@@ -196,9 +218,10 @@ def stats(update: Update, context: CallbackContext):
         update.message.reply_text("You are not authorized to use this command.")
         return
 
-    num_users = len(user_searches)
-    num_groups = len(user_limits)
-    update.message.reply_text(f"Bot Stats:\n\nUsers: {num_users}\nGroups: {num_groups}")
+    total_users = len(user_searches)
+    total_scans = sum(user_searches.values())
+
+    update.message.reply_text(f"Total users: {total_users}\nTotal scans performed: {total_scans}")
 
 def broadcast(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
