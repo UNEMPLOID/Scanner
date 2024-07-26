@@ -11,6 +11,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
 from telegram.error import BadRequest
+from telegram.utils.helpers import escape_markdown
 
 # Replace placeholders with your actual API keys, bot token, and other details
 SHODAN_API_KEY = 'YaLNvFBVpaTrMkW829nATM3xRTvMaVsH'
@@ -179,26 +180,25 @@ def scan(update: Update, context: CallbackContext):
 
     result_messages = []
     result_messages.append(f"*Web scanner:*\n\n")
-    result_messages.append(f"*WHOIS Info:*\n`{result['whois']}`\n\n")
-    result_messages.append(f"*IP Geolocation:*\n`{json.dumps(result['ip_geo'], indent=2)}`\n\n")
-    result_messages.append(f"*Real IP Address:*\n`{result['real_ip']}`\n\n")
-    result_messages.append(f"*SSL Certificate:*\n`{json.dumps(result['ssl_info'], indent=2)}`\n\n")
-    result_messages.append(f"*DNS Records:*\n`{result['dns_records']}`\n\n")
-    result_messages.append(f"*HTTP Headers:*\n`{json.dumps(result['http_headers'], indent=2)}`\n\n")
-    result_messages.append(f"*Web Technologies:*\n`{json.dumps(result['web_technologies'], indent=2)}`\n\n")
-    result_messages.append(f"*Subdomains:*\n`{result['subdomains']}`\n\n")
-    result_messages.append(f"Join us - @fakaoanl")
+    result_messages.append(f"*WHOIS Info:*\n`{escape_markdown(result['whois'], version=2)}`\n\n")
+    result_messages.append(f"*IP Geolocation:*\n`{escape_markdown(json.dumps(result['ip_geo'], indent=2), version=2)}`\n\n")
+    result_messages.append(f"*Real IP Address:*\n`{escape_markdown(result['real_ip'], version=2)}`\n\n")
+    result_messages.append(f"*SSL Certificate:*\n`{escape_markdown(json.dumps(result['ssl_info'], indent=2), version=2)}`\n\n")
+    result_messages.append(f"*DNS Records:*\n`{escape_markdown(result['dns_records'], version=2)}`\n\n")
+    result_messages.append(f"*HTTP Headers:*\n`{escape_markdown(json.dumps(result['http_headers'], indent=2), version=2)}`\n\n")
+    result_messages.append(f"*Web Technologies:*\n`{escape_markdown(json.dumps(result['web_technologies'], indent=2), version=2)}`\n\n")
+    result_messages.append(f"*Subdomains:*\n`{escape_markdown(result['subdomains'], version=2)}`")
 
-    try:
-        for msg in result_messages:
-            if len(msg) > 4096:
-                for i in range(0, len(msg), 4096):
-                    update.message.reply_text(msg[i:i+4096], parse_mode=ParseMode.MARKDOWN)
-            else:
-                update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-    except BadRequest as e:
-        logger.error(f"Error sending message: {str(e)}")
-        update.message.reply_text(f"An error occurred while sending the message: {str(e)}")
+    # Telegram message character limit is 4096, split into parts if necessary
+    max_length = 4096
+    for message in result_messages:
+        for i in range(0, len(message), max_length):
+            part = message[i:i + max_length]
+            try:
+                update.message.reply_text(part, parse_mode=ParseMode.MARKDOWN_V2)
+            except BadRequest as e:
+                logger.error(f"Error sending message: {str(e)}")
+                update.message.reply_text(f"An error occurred while sending the message: {str(e)}")
 
 def stats(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
@@ -269,4 +269,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-                           
