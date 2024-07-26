@@ -114,6 +114,7 @@ def scan_website(url):
         result['subdomains'] = f"Error fetching subdomains: {str(e)}"
 
     return result
+
                                  
 
 # Command handlers
