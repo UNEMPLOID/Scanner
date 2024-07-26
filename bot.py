@@ -72,14 +72,14 @@ def scan_website(url):
     try:
         ip_address = socket.gethostbyname(strip_protocol(url))
         ip_info = requests.get(f'https://ipinfo.io/{ip_address}/json').json()
-        result['ip_geo'] = ip_info
+        result['ip_geo'] = json.dumps(ip_info, indent=2)
         result['real_ip'] = ip_address
     except Exception as e:
         result['ip_geo'] = f"Error fetching IP geolocation: {str(e)}"
 
     try:
         ssl_info = requests.get(f'https://api.ssllabs.com/api/v3/analyze?host={strip_protocol(url)}').json()
-        result['ssl_info'] = ssl_info
+        result['ssl_info'] = json.dumps(ssl_info, indent=2)
     except Exception as e:
         result['ssl_info'] = f"Error fetching SSL info: {str(e)}"
 
@@ -97,13 +97,13 @@ def scan_website(url):
 
     try:
         web_technologies_info = shodan_api.search(url)
-        result['web_technologies'] = web_technologies_info['matches'][0]['data']
+        result['web_technologies'] = json.dumps(web_technologies_info['matches'][0]['data'], indent=2)
     except Exception as e:
         result['web_technologies'] = f"Error fetching web technologies: {str(e)}"
 
     try:
         subdomains = sublist3r.main(url, 40, savefile=False, ports=None, silent=True, verbose=False, enable_bruteforce=False, engines=None)
-        result['subdomains'] = subdomains
+        result['subdomains'] = subdomains if isinstance(subdomains, str) else "\n".join(subdomains)
     except Exception as e:
         result['subdomains'] = f"Error fetching subdomains: {str(e)}"
 
@@ -180,12 +180,12 @@ def scan(update: Update, context: CallbackContext):
     result_messages = []
     result_messages.append(f"*Web scanner:*\n\n")
     result_messages.append(f"*WHOIS Info:*\n`{escape_markdown(result['whois'], version=2)}`\n\n")
-    result_messages.append(f"*IP Geolocation:*\n`{escape_markdown(json.dumps(result['ip_geo'], indent=2), version=2)}`\n\n")
+    result_messages.append(f"*IP Geolocation:*\n`{escape_markdown(result['ip_geo'], version=2)}`\n\n")
     result_messages.append(f"*Real IP Address:*\n`{escape_markdown(result['real_ip'], version=2)}`\n\n")
-    result_messages.append(f"*SSL Certificate:*\n`{escape_markdown(json.dumps(result['ssl_info'], indent=2), version=2)}`\n\n")
-    result_messages.append(f"*DNS Records:*\n`{escape_markdown(result['dns_records'], version=2)}`\n\n")
+    result_messages.append(f"*SSL Certificate:*\n`{escape_markdown(result['ssl_info'], version=2)}`\n\n")
+    result_messages.append(f"*DNS Records:*\n`{escape_markdown(str(result['dns_records']), version=2)}`\n\n")
     result_messages.append(f"*HTTP Headers:*\n`{escape_markdown(json.dumps(result['http_headers'], indent=2), version=2)}`\n\n")
-    result_messages.append(f"*Web Technologies:*\n`{escape_markdown(json.dumps(result['web_technologies'], indent=2), version=2)}`\n\n")
+    result_messages.append(f"*Web Technologies:*\n`{escape_markdown(result['web_technologies'], version=2)}`\n\n")
     result_messages.append(f"*Subdomains:*\n`{escape_markdown(result['subdomains'], version=2)}`")
 
     # Telegram message character limit is 4096, split the messages if too long
@@ -263,4 +263,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
