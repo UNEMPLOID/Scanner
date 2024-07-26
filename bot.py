@@ -58,14 +58,17 @@ def scan_website(url):
         'real_ip': '',
         'ssl_info': '',
         'dns_records': '',
-        'http_headers': {},
-        'web_technologies': {},
+        'http_headers': '',
+        'web_technologies': '',
         'subdomains': ''
     }
 
     try:
-        whois_info = whois.whois(url)
-        result['whois'] = whois_info.text if isinstance(whois_info, str) else whois_info.to_json()
+        whois_info = whois.whois(strip_protocol(url))
+        if whois_info:
+            result['whois'] = whois_info.text if isinstance(whois_info, str) else whois_info.to_json()
+        else:
+            result['whois'] = "No WHOIS information available."
     except Exception as e:
         result['whois'] = f"Error fetching WHOIS info: {str(e)}"
 
@@ -96,18 +99,22 @@ def scan_website(url):
         result['http_headers'] = f"Error fetching HTTP headers: {str(e)}"
 
     try:
-        web_technologies_info = shodan_api.search(url)
-        result['web_technologies'] = json.dumps(web_technologies_info['matches'][0]['data'], indent=2)
+        web_technologies_info = shodan_api.search(strip_protocol(url))
+        if 'matches' in web_technologies_info and web_technologies_info['matches']:
+            result['web_technologies'] = json.dumps(web_technologies_info['matches'][0]['data'], indent=2)
+        else:
+            result['web_technologies'] = "No web technologies information available."
     except Exception as e:
         result['web_technologies'] = f"Error fetching web technologies: {str(e)}"
 
     try:
-        subdomains = sublist3r.main(url, 40, savefile=False, ports=None, silent=True, verbose=False, enable_bruteforce=False, engines=None)
+        subdomains = sublist3r.main(strip_protocol(url), 40, savefile=False, ports=None, silent=True, verbose=False, enable_bruteforce=False, engines=None)
         result['subdomains'] = subdomains if isinstance(subdomains, str) else "\n".join(subdomains)
     except Exception as e:
         result['subdomains'] = f"Error fetching subdomains: {str(e)}"
 
     return result
+                                 
 
 # Command handlers
 def start(update: Update, context: CallbackContext):
@@ -263,3 +270,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
