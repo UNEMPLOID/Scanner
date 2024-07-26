@@ -63,14 +63,12 @@ def scan_website(url):
         'subdomains': ''
     }
 
-    # WHOIS Info
     try:
         whois_info = whois.whois(url)
-        result['whois'] = whois_info.text
+        result['whois'] = whois_info.text if isinstance(whois_info, str) else whois_info.to_json()
     except Exception as e:
         result['whois'] = f"Error fetching WHOIS info: {str(e)}"
 
-    # IP Geolocation
     try:
         ip_address = socket.gethostbyname(strip_protocol(url))
         ip_info = requests.get(f'https://ipinfo.io/{ip_address}/json').json()
@@ -79,35 +77,30 @@ def scan_website(url):
     except Exception as e:
         result['ip_geo'] = f"Error fetching IP geolocation: {str(e)}"
 
-    # SSL Certificate Info
     try:
         ssl_info = requests.get(f'https://api.ssllabs.com/api/v3/analyze?host={strip_protocol(url)}').json()
         result['ssl_info'] = ssl_info
     except Exception as e:
         result['ssl_info'] = f"Error fetching SSL info: {str(e)}"
 
-    # DNS Records
     try:
         dns_info = dns.resolver.resolve(strip_protocol(url), 'A')
         result['dns_records'] = [str(record) for record in dns_info]
     except Exception as e:
         result['dns_records'] = f"Error fetching DNS records: {str(e)}"
 
-    # HTTP Headers
     try:
         headers_info = requests.head(f'http://{strip_protocol(url)}').headers
         result['http_headers'] = dict(headers_info)
     except Exception as e:
         result['http_headers'] = f"Error fetching HTTP headers: {str(e)}"
 
-    # Web Technologies
     try:
         web_technologies_info = shodan_api.search(url)
         result['web_technologies'] = web_technologies_info['matches'][0]['data']
     except Exception as e:
         result['web_technologies'] = f"Error fetching web technologies: {str(e)}"
 
-    # Subdomains
     try:
         subdomains = sublist3r.main(url, 40, savefile=False, ports=None, silent=True, verbose=False, enable_bruteforce=False, engines=None)
         result['subdomains'] = subdomains
@@ -178,6 +171,12 @@ def scan(update: Update, context: CallbackContext):
 
     user_limits[user_id] -= 1
 
+    # Log to logger group
+    try:
+        context.bot.send_message(chat_id=LOGGER_GROUP_ID, text=f"User {user_id} scanned URL: {url}")
+    except Exception as e:
+        logger.error(f"Error logging to logger group: {str(e)}")
+
     result_messages = []
     result_messages.append(f"*Web scanner:*\n\n")
     result_messages.append(f"*WHOIS Info:*\n`{escape_markdown(result['whois'], version=2)}`\n\n")
@@ -189,16 +188,11 @@ def scan(update: Update, context: CallbackContext):
     result_messages.append(f"*Web Technologies:*\n`{escape_markdown(json.dumps(result['web_technologies'], indent=2), version=2)}`\n\n")
     result_messages.append(f"*Subdomains:*\n`{escape_markdown(result['subdomains'], version=2)}`")
 
-    # Telegram message character limit is 4096, split into parts if necessary
-    max_length = 4096
+    # Telegram message character limit is 4096, split the messages if too long
+    MAX_MESSAGE_LENGTH = 4096
     for message in result_messages:
-        for i in range(0, len(message), max_length):
-            part = message[i:i + max_length]
-            try:
-                update.message.reply_text(part, parse_mode=ParseMode.MARKDOWN_V2)
-            except BadRequest as e:
-                logger.error(f"Error sending message: {str(e)}")
-                update.message.reply_text(f"An error occurred while sending the message: {str(e)}")
+        for i in range(0, len(message), MAX_MESSAGE_LENGTH):
+            update.message.reply_text(message[i:i+MAX_MESSAGE_LENGTH], parse_mode=ParseMode.MARKDOWN_V2)
 
 def stats(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
@@ -269,3 +263,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+        
