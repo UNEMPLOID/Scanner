@@ -1,8 +1,8 @@
-python-telegram-bot==20.0
-shodan==1.26.1
-sublist3r==1.0
-requests==2.31.0
-dnspython==2.3.0
-whois==0.9.15
-dnspython==2.2.1
-python-dotenv==1.0.0
+python-telegram-bot
+shodan
+sublist3r
+requests
+dnspython
+whois
+dnspython
+python-dotenv
